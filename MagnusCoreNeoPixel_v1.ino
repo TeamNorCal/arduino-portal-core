@@ -5,6 +5,11 @@
 // first communication pin for neo pixel string
 #define BASE_PIN 2
 
+#define NUM_STRINGS 1 // one for each resonator
+//#define NUM_STRINGS 8 // one for each resonator
+
+const uint16_t LEDS_PER_STRAND = 50;
+
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
 enum Ownership {  neutral = 0, enlightened, resistance };
 
@@ -13,9 +18,62 @@ struct pixel_string {
   uint32_t timing;
 };
 
-#define NUM_STRINGS 1 // one for each resonator
-//#define NUM_STRINGS 8 // one for each resonator
+// Animation State
 
+struct PulseState {
+    unsigned long startTime;
+};
+
+union AnimationState {
+    PulseState pulse;
+};
+
+// Contract of animation implemnations
+class Animation {
+    public:
+        virtual void init(AnimationState& state) = 0;
+        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) =0;
+};
+
+// Animation implemntations
+
+class Pulse : public Animation {
+    public:
+        // Initialize state to animation start point
+        virtual void init(AnimationState& state) override {
+            state.pulse.startTime = millis();
+        }
+
+        // Draw a new frame of the animation
+        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+            unsigned long phase = (millis() - state.pulse.startTime) % AnimationDuration; // In ms
+            uint16_t startPixel = phase * PixelsPerMs;
+            Serial.print("Start pixel: "); Serial.println(startPixel, DEC);
+            for (uint16_t i = 0; i < LEDS_PER_STRAND; i++) {
+                if (i >= startPixel && i < startPixel + PulseLength) {
+                    strip.setPixelColor(i, 0, 0xff, 0);
+                } else {
+                    strip.setPixelColor(i, 0, 0, 0);
+                }
+            }
+            strip.show();
+        }
+
+    private:
+        const unsigned long AnimationDuration = 4000l; // ms
+        const uint16_t PulseLength = LEDS_PER_STRAND / 8;
+        const float PixelsPerMs = (float) LEDS_PER_STRAND / AnimationDuration;
+};
+
+// Collection of all supported animations
+struct Animations {
+    Pulse pulse;
+};
+
+// Static animation implementations singleton
+Animations animations;
+
+AnimationState states[NUM_STRINGS];
 
 pixel_string strings[NUM_STRINGS];
 
@@ -28,7 +86,7 @@ pixel_string strings[NUM_STRINGS];
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
 //Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, NEO_RGB + NEO_KHZ800);
 
 
 // Serial I/O
@@ -113,6 +171,7 @@ void loop()
     {
       owner = enlightened;
       percent = getPercent(&command[1]);
+      animations.pulse.init(states[0]);
     }
     else if( command[0] == 'r' || command[0] == 'R' )
     {
@@ -136,6 +195,7 @@ void loop()
   
     uint8_t red, green, blue, white;
     red = 0x20; green = 0; blue = 0x20; white = 0x20;
+    bool useAnimations = false;
     if( owner == neutral ) 
     {
       red = 0x40; green = 0x40; blue = 0x40; white = 0x40;
@@ -148,19 +208,26 @@ void loop()
     else if( owner == enlightened )
     {
       red = 0x1f; green = 0xff; blue = 0; white = 0;
+      useAnimations = true;
     }
   
-    for(i=0; i < strip.numPixels(); i++)
-    {
-        //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
-//        strip.setPixelColor(i, green, red, blue,white);
-        strip.setPixelColor(i, green, red, blue);
-        float scale = ((millis()/100)%100)/200.0 + 0.5;
-        float pct = percent * scale;
-//        Serial.print("Percent: "); Serial.println(pct, 4);
-        strip.setBrightness((uint8_t)((uint16_t)(255*(pct/100.0))));
-    }    
-    strip.show();
+    if (useAnimations) {
+        strip.setBrightness(255);
+        animations.pulse.doFrame(states[0], strip);
+    } else {
+        for(i=0; i < strip.numPixels(); i++)
+        {
+            //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
+            //        strip.setPixelColor(i, green, red, blue,white);
+            strip.setPixelColor(i, red, green, blue);
+            //        float scale = ((millis()/100)%100)/200.0 + 0.5;
+            float scale = 1.0f;
+            float pct = percent * scale;
+            //        Serial.print("Percent: "); Serial.println(pct, 4);
+            strip.setBrightness((uint8_t)((uint16_t)(255*(pct/100.0))));
+        }
+        strip.show();
+    }
   
     dir++;
     if( dir >= NUM_STRINGS )
