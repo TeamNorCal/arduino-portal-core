@@ -13,7 +13,8 @@ struct pixel_string {
   uint32_t timing;
 };
 
-#define NUM_STRINGS 8 // one for each resonator
+#define NUM_STRINGS 1 // one for each resonator
+//#define NUM_STRINGS 8 // one for each resonator
 
 
 pixel_string strings[NUM_STRINGS];
@@ -26,11 +27,12 @@ pixel_string strings[NUM_STRINGS];
 //   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800);
+//Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, NEO_GRB + NEO_KHZ800);
 
 
 // Serial I/O
-int8_t command[32];
+char command[32];
 int8_t in_index = 0;
 
 void start_serial(void)
@@ -67,7 +69,7 @@ bool collect_serial(void)
   return false;
 }
 
-uint8_t getPercent(uint8_t *buffer)
+uint8_t getPercent(const char *buffer)
 {
   unsigned long inVal = strtoul(buffer,NULL,10);
   return uint8_t( constrain(inVal, 0, 100) );
@@ -122,13 +124,13 @@ void loop()
       owner = neutral;
       percent = 100;
     }
-    //Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
-    //Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
+    Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
+    Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
   }
 
   if(strings[dir].timing < millis() )
   {
-    strings[dir].timing += 100; // every 100 milliseconds we will check this direction
+    strings[dir].timing += 10; // every 100 milliseconds we will check this direction
     
     strip.setPin(dir+BASE_PIN);  // pick the string
   
@@ -136,7 +138,8 @@ void loop()
     red = 0x20; green = 0; blue = 0x20; white = 0x20;
     if( owner == neutral ) 
     {
-      red = 0; green = 0; blue = 0; white = 0x40;
+      red = 0x40; green = 0x40; blue = 0x40; white = 0x40;
+//      red = 0; green = 0; blue = 0; white = 0x40;
     }
     else if( owner == resistance )
     {
@@ -150,8 +153,12 @@ void loop()
     for(i=0; i < strip.numPixels(); i++)
     {
         //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
-        strip.setPixelColor(i, green, red, blue,white);
-        strip.setBrightness((uint8_t)((uint16_t)(255*percent)/100));
+//        strip.setPixelColor(i, green, red, blue,white);
+        strip.setPixelColor(i, green, red, blue);
+        float scale = ((millis()/100)%100)/200.0 + 0.5;
+        float pct = percent * scale;
+//        Serial.print("Percent: "); Serial.println(pct, 4);
+        strip.setBrightness((uint8_t)((uint16_t)(255*(pct/100.0))));
     }    
     strip.show();
   
