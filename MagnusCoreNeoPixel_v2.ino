@@ -114,16 +114,19 @@ void loop()
     case 'e':
       owner = enlightened;
       percent = getPercent(&command[1]);
+      Serial.println("OK");
       break;
     case 'R':
     case 'r':
       owner = resistance;
       percent = getPercent(&command[1]);
+      Serial.println("OK");
       break;
     case 'n':
     case 'N':
       owner = neutral;
       percent = 100;
+      Serial.println("OK");
       break;
     default:
     Serial.println("?");
