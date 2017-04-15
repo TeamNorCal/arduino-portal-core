@@ -1,5 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <stdlib.h>
+#include <string.h>
 
 // first communication pin for neo pixel string
 #define BASE_PIN 2
@@ -29,7 +30,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800
 
 
 // Serial I/O
-int8_t command[32];
+int8_t command[128];
 int8_t in_index = 0;
 
 void start_serial(void)
@@ -113,13 +114,13 @@ void loop()
     case 'E':
     case 'e':
       owner = enlightened;
-      percent = getPercent(&command[1]);
+      //percent = getPercent(&command[1]);
       Serial.println("OK");
       break;
     case 'R':
     case 'r':
       owner = resistance;
-      percent = getPercent(&command[1]);
+      //percent = getPercent(&command[1]);
       Serial.println("OK");
       break;
     case 'n':
