@@ -1,6 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <stdlib.h>
-
+#include <string.h>
 
 // first communication pin for neo pixel string
 #define BASE_PIN 2
@@ -30,7 +30,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800
 
 
 // Serial I/O
-int8_t command[32];
+int8_t command[64];
 int8_t in_index = 0;
 
 void start_serial(void)
@@ -41,25 +41,27 @@ void start_serial(void)
 
 bool collect_serial(void)
 {
-  while( Serial.available() > 0 )
+  while ( Serial.available() > 0 )
   {
     int8_t ch = Serial.read();
-    if( ch == '\n' ) 
+    if ( ch == '\n' )
     {
       command[in_index] = 0; // terminate
-      if( in_index > 0 )
+      if ( in_index > 0 )
       {
         in_index = 0;
         return true;
       }
     }
-    else if( ch == 0x0a || ch == 0x13 ) // carriage return or linefeed (ignore
+    else if ( ch == 0x0a || ch == 0x13 ) // carriage return or linefeed (ignore
     {
     }
     else
     {
       command[in_index] = ch;
-      in_index++;
+      if ( in_index < sizeof(command) - 1 ) {
+        in_index++;
+      }
       //if( in_index >= 32 ) //sizeof(command) )
       //  in_index = 0;
     }
@@ -69,7 +71,7 @@ bool collect_serial(void)
 
 uint8_t getPercent(uint8_t *buffer)
 {
-  unsigned long inVal = strtoul(buffer,NULL,10);
+  unsigned long inVal = strtoul(buffer, NULL, 10);
   return uint8_t( constrain(inVal, 0, 100) );
 }
 
@@ -80,14 +82,14 @@ uint8_t owner;    // 0=neutral, 1=enl, 2=res
 
 
 // the setup function runs once when you press reset or power the board
-void setup() 
+void setup()
 {
   start_serial();
   strip.begin();
   uint8_t i;
-  for( i = 0; i<NUM_STRINGS; i++)
+  for ( i = 0; i < NUM_STRINGS; i++)
   {
-    strip.setPin(i+BASE_PIN);
+    strip.setPin(i + BASE_PIN);
     strip.show(); // Initialize all pixels to 'off'
 
     strings[i].phase = 0;
@@ -100,63 +102,73 @@ void setup()
 }
 
 // the loop function runs over and over again forever
-void loop() 
+void loop()
 {
   uint16_t i, val;
 
-  if( collect_serial() )
+  if ( collect_serial() )
   {
     // we have valid buffer of serial input
-    if( command[0] == 'e' || command[0] == 'E' )
-    {
-      owner = enlightened;
-      percent = getPercent(&command[1]);
+    switch (command[0]) {
+      case '*':
+        Serial.println("Magnus Core Node");
+        break;
+      case 'E':
+      case 'e':
+        owner = enlightened;
+        //percent = getPercent(&command[1]);
+        Serial.println("OK");
+        break;
+      case 'R':
+      case 'r':
+        owner = resistance;
+        //percent = getPercent(&command[1]);
+        Serial.println("OK");
+        break;
+      case 'n':
+      case 'N':
+        owner = neutral;
+        percent = 100;
+        Serial.println("OK");
+        break;
+      default:
+        Serial.println("?");
+        //Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": ");
+        //Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC);
     }
-    else if( command[0] == 'r' || command[0] == 'R' )
-    {
-      owner = resistance;
-      percent = getPercent(&command[1]);
-    }
-    else if( command[0] == 'n' || command[0] == 'N' )
-    {
-      owner = neutral;
-      percent = 100;
-    }
-    //Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
-    //Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
   }
 
-  if(strings[dir].timing < millis() )
+  if (strings[dir].timing < millis() )
   {
     strings[dir].timing += 100; // every 100 milliseconds we will check this direction
-    
-    strip.setPin(dir+BASE_PIN);  // pick the string
-  
+
+    strip.setPin(dir + BASE_PIN); // pick the string
+
     uint8_t red, green, blue, white;
     red = 0x20; green = 0; blue = 0x20; white = 0x20;
-    if( owner == neutral ) 
+    if ( owner == neutral )
     {
       red = 0; green = 0; blue = 0; white = 0x40;
     }
-    else if( owner == resistance )
+    else if ( owner == resistance )
     {
       red = 0; green = 0x1f; blue = 0xff;; white = 0;
     }
-    else if( owner == enlightened )
+    else if ( owner == enlightened )
     {
       red = 0x1f; green = 0xff; blue = 0; white = 0;
     }
-  
-    for(i=0; i < strip.numPixels(); i++)
+
+    for (i = 0; i < strip.numPixels(); i++)
     {
-        //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
-        strip.setPixelColor(i, green, red, blue,white);
-        strip.setBrightness((uint8_t)((uint16_t)(255*percent)/100));
-    }    
+      //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
+      strip.setPixelColor(i, green, red, blue, white);
+      strip.setBrightness((uint8_t)((uint16_t)(255 * percent) / 100));
+    }
     strip.show();
-  
+
     dir++;
-    if( dir >= NUM_STRINGS )
+    if ( dir >= NUM_STRINGS )
       dir = 0;
   }
 
