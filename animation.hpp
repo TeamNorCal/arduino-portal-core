@@ -3,10 +3,10 @@
 union Color {
     uint32_t w; // As packed value...w for 'word', lacking a better option
     struct {
-        uint8_t white;
-        uint8_t red;
-        uint8_t green;
         uint8_t blue;
+        uint8_t green;
+        uint8_t red;
+        uint8_t white;
     } c; // As individual components...c for 'components'
 };
 
@@ -16,6 +16,7 @@ union Color {
 Color ToColor(uint32_t color) {
     Color c;
     c.w = color;
+    return c;
 }
 
 Color ToColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
@@ -24,6 +25,16 @@ Color ToColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
     c.c.green = green;
     c.c.blue = blue;
     c.c.white = white;
+    return c;
+}
+
+Color ToColor(uint8_t red, uint8_t green, uint8_t blue) {
+    Color c;
+    c.c.red = red;
+    c.c.green = green;
+    c.c.blue = blue;
+    c.c.white = 0;
+    return c;
 }
 
 // Animation State
@@ -31,6 +42,7 @@ Color ToColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
 struct CommonState {
     uint16_t numPixels;
     unsigned long startTime;
+    unsigned long duration; // ms
 };
 
 struct MovingPulseState : public CommonState {
@@ -43,16 +55,40 @@ struct PulseState : public CommonState {
     Color color;
 };
 
+struct RedFlashState : public CommonState {
+    bool isRgbw;
+};
+
 union AnimationState {
+    CommonState      common;
     MovingPulseState movingPulse;
     PulseState       pulse;
+    RedFlashState    redFlash;
 };
 
 // Contract of animation implemnations
 class Animation {
     public:
-//        virtual void init(AnimationState& state, Adafruit_NeoPixel& strip) = 0;
+        void commonInit(AnimationState& state, Adafruit_NeoPixel& strip) {
+            CommonState& s = state.common;
+            s.startTime = millis();
+            s.numPixels = strip.numPixels();
+        }
+
+        virtual void start(AnimationState& state) {
+            state.common.startTime = millis();
+        }
+
         virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) =0;
+        // How many cycles have completed?
+        virtual uint32_t cyclesComplete(const AnimationState& state) const {
+            return (millis() - state.common.startTime) / state.common.duration;
+        }
+        // Checks to see if at least one full cycle has completed. Useful for
+        // transient animations.
+        bool done(const AnimationState& state) const {
+            return cyclesComplete(state) > 0;
+        }
 };
 
 // Animation implemntations
@@ -62,13 +98,12 @@ class MovingPulse : public Animation {
     public:
         // Initialize state to animation start point
         void init(AnimationState& state, Adafruit_NeoPixel& strip, uint32_t color) {
+            commonInit(state, strip);
             MovingPulseState& s = state.movingPulse;
-            uint16_t numPixels = strip.numPixels();
-            s.startTime = millis();
+            s.duration = AnimationDuration;
             s.color = color;
-            s.pulseLength = numPixels / PulseDivisor;
-            s.numPixels = numPixels;
-            s.pixelsPerMs = (float) numPixels / AnimationDuration;
+            s.pulseLength = s.numPixels / PulseDivisor;
+            s.pixelsPerMs = (float) s.numPixels / AnimationDuration;
         }
 
         // Draw a new frame of the animation
@@ -77,7 +112,6 @@ class MovingPulse : public Animation {
 
             unsigned long phase = (millis() - s.startTime) % AnimationDuration; // In ms
             uint16_t startPixel = phase * s.pixelsPerMs;
-            //Serial.print("Start pixel: "); Serial.println(startPixel, DEC);
             for (uint16_t i = 0; i < s.numPixels; i++) {
                 if (i >= startPixel && i < startPixel + s.pulseLength) {
                     strip.setPixelColor(i, s.color);
@@ -87,6 +121,12 @@ class MovingPulse : public Animation {
             }
             strip.show();
         }
+
+        /*
+        virtual uint32_t cyclesComplete(const AnimationState& state) const override {
+            return (millis() - state.movingPulse.startTime) / AnimationDuration;
+        }
+        */
 
     private:
         const unsigned long AnimationDuration = 4000l; // ms
@@ -99,16 +139,16 @@ class Pulse : public Animation {
         // Initialize state to animation start point
         //void init(AnimationState& state, Adafruit_NeoPixel& strip, uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
         void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color) {
+            commonInit(state, strip);
             PulseState& s = state.pulse;
-            uint16_t numPixels = strip.numPixels();
-            s.numPixels = numPixels;
-            s.startTime = millis();
+            s.duration = AnimationDuration;
             s.color = color;
         }
 
         // Draw a new frame of the animation
         virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
             PulseState& s = state.pulse;
+            //Serial.print("Doing pulse frame "); Serial.println(s.color.w, HEX);
 
             unsigned long phase = (millis() - s.startTime) % AnimationDuration; // In ms
             float brightness;
@@ -129,6 +169,12 @@ class Pulse : public Animation {
             strip.show();
         }
 
+        /*
+        virtual uint32_t cyclesComplete(const AnimationState& state) const override {
+            return (millis() - state.pulse.startTime) / AnimationDuration;
+        }
+        */
+
     private:
         const unsigned long AnimationDuration = 4000l; // ms
         const float FullBrightnessPoint = 0.5; // As a fraction of 1. At what point in the cycle should we achieve full brightness?
@@ -136,8 +182,78 @@ class Pulse : public Animation {
         const float MinBrightness = 0.25;
 };
 
+// A white-red-white flash, appropriate for a portal going from owned to unowned
+class RedFlash : public Animation {
+    public:
+        // Initialize state to animation start point
+        //void init(AnimationState& state, Adafruit_NeoPixel& strip, uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
+        void init(AnimationState& state, Adafruit_NeoPixel& strip, bool isRgbw) {
+            commonInit(state, strip);
+            RedFlashState& s = state.redFlash;
+            s.duration = AnimationDuration;
+            s.isRgbw = isRgbw;
+        }
+
+        // Draw a new frame of the animation
+        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+            RedFlashState& s = state.redFlash;
+
+            unsigned long phase = (millis() - s.startTime) % AnimationDuration; // In ms
+
+            Color c;
+            if (phase < StartRed || phase > EndRed) {
+                float pct;
+                if (phase < StartRed) {
+                    pct = ((float) (StartRed - phase)) / (StartRed - 0L);
+                } else /* phase > EndRed */ {
+                    pct = ((float) (phase - EndRed)) / (AnimationDuration - EndRed);
+                }
+                float whiteAmt = 0xff * pct;
+                if (s.isRgbw) {
+                    c = ToColor(0, 0, 0, whiteAmt);
+                } else {
+                    c = ToColor(whiteAmt, whiteAmt, whiteAmt);
+                }
+            } else {
+                float pct;
+                if (phase < MaxRedStart) {
+                    pct = ((float) (phase - StartRed)) / (MaxRedStart - StartRed);
+                } else if (phase > MaxRedEnd) {
+                    pct = ((float) (EndRed - phase)) / (EndRed - MaxRedEnd);
+                } else /* all red */ {
+                    pct = 1.0f;
+                }
+                uint8_t redAmt = 0xff * pct;
+                if (s.isRgbw) {
+                    c = ToColor(redAmt, 0, 0, 0);
+                } else {
+                    c = ToColor(redAmt, 0, 0, 0);
+                }
+            }
+
+            for (uint16_t i = 0; i < s.numPixels; i++) {
+                strip.setPixelColor(i, c.w);
+            }
+            strip.show();
+        }
+
+        /*
+        virtual uint32_t cyclesComplete(const AnimationState& state) const override {
+            return (millis() - state.pulse.startTime) / AnimationDuration;
+        }
+        */
+
+    private:
+        const unsigned long AnimationDuration = 1000L; // ms
+        const unsigned long StartRed = AnimationDuration * 0.25; // ms - when we start ramping up red
+        const unsigned long MaxRedStart = AnimationDuration * 0.45; // ms - when we have full brightness red
+        const unsigned long MaxRedEnd = AnimationDuration * 0.55; // ms - when we have full brightness red
+        const unsigned long EndRed = AnimationDuration * 0.75; // ms - when we finish fading red and go back to white
+};
+
 // Collection of all supported animations
 struct Animations {
     MovingPulse movingPulse;
     Pulse pulse;
+    RedFlash redFlash;
 };

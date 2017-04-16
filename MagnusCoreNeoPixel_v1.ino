@@ -1,7 +1,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <stdlib.h>
 #include "animation.hpp"
-
+#include "circbuff.hpp"
 
 // first communication pin for neo pixel string
 #define BASE_PIN 2
@@ -10,6 +10,7 @@
 //#define NUM_STRINGS 8 // one for each resonator
 
 const uint16_t LEDS_PER_STRAND = 50;
+const bool RGBW_SUPPORT = false;
 
 // Mask to clear 'upper case' ASCII bit
 const char CASE_MASK = ~0x20;
@@ -27,7 +28,9 @@ Animations animations;
 
 AnimationState states[NUM_STRINGS];
 
-Animation *pCurrAnimation;
+//Animation *pCurrAnimation;
+
+CircularBuffer<Animation *> animationQueue;
 
 pixel_string strings[NUM_STRINGS];
 
@@ -40,7 +43,7 @@ pixel_string strings[NUM_STRINGS];
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
 //Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, NEO_RGB + NEO_KHZ800);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, (RGBW_SUPPORT ? NEO_RGBW : NEO_RGB) + NEO_KHZ800);
 
 
 // Serial I/O
@@ -134,88 +137,84 @@ void loop()
                   owner == resistance ? 0xff : 0x00,
                   0x00);
               animations.pulse.init(states[0], strip, c);
-              pCurrAnimation = &animations.pulse;
+//              pCurrAnimation = &animations.pulse;
+              animationQueue.setTo(&animations.pulse);
               break;
 
           case 'N':
               owner = neutral;
-              percent = 100;
+              animations.redFlash.init(states[0], strip, RGBW_SUPPORT);
+              animationQueue.setTo(&animations.redFlash);
+              percent = 40;
               break;
 
           default:
               Serial.print("Unkwown command "); Serial.println(cmd);
               break;
       }
-      /*
-      if( cmd == 'E' )
-      {
-          owner = enlightened;
-          percent = getPercent(&command[1]);
-          animations.movingPulse.init(states[0], strip);
-          pCurrAnimation = &animations.movingPulse;
-      }
-      else if( command[0] == 'r' || command[0] == 'R' )
-      {
-          owner = resistance;
-          percent = getPercent(&command[1]);
-      }
-      else if( command[0] == 'n' || command[0] == 'N' )
-      {
-          owner = neutral;
-          percent = 100;
-      }
-      */
       Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
       Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
   }
 
   if(strings[dir].timing < millis() )
   {
-    strings[dir].timing += 10; // every 100 milliseconds we will check this direction
-    
-    strip.setPin(dir+BASE_PIN);  // pick the string
-  
-    uint8_t red, green, blue, white;
-    red = 0x20; green = 0; blue = 0x20; white = 0x20;
-    bool useAnimations = false;
-    if( owner == neutral ) 
-    {
-      red = 0x40; green = 0x40; blue = 0x40; white = 0x40;
-//      red = 0; green = 0; blue = 0; white = 0x40;
-    }
-    else if( owner == resistance )
-    {
-      red = 0; green = 0x1f; blue = 0xff;; white = 0;
-      useAnimations = true;
-    }
-    else if( owner == enlightened )
-    {
-      red = 0x1f; green = 0xff; blue = 0; white = 0;
-      useAnimations = true;
-    }
-  
-    if (useAnimations) {
-        //strip.setBrightness(255);
-        strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
-        pCurrAnimation->doFrame(states[0], strip);
-    } else {
-        for(i=0; i < strip.numPixels(); i++)
-        {
-            //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
-            //        strip.setPixelColor(i, green, red, blue,white);
-            strip.setPixelColor(i, red, green, blue);
-            //        float scale = ((millis()/100)%100)/200.0 + 0.5;
-            float scale = 1.0f;
-            float pct = percent * scale;
-            //        Serial.print("Percent: "); Serial.println(pct, 4);
-            strip.setBrightness((uint8_t)((uint16_t)(255*(pct/100.0))));
-        }
-        strip.show();
-    }
-  
-    dir++;
-    if( dir >= NUM_STRINGS )
-      dir = 0;
+      strings[dir].timing += 10; // every 100 milliseconds we will check this direction
+
+      strip.setPin(dir+BASE_PIN);  // pick the string
+
+      uint8_t red, green, blue, white;
+      red = 0x20; green = 0; blue = 0x20; white = 0x20;
+      bool useAnimations = false;
+      if( owner == neutral ) 
+      {
+          red = 0x40; green = 0x40; blue = 0x40; white = 0x40;
+          //      red = 0; green = 0; blue = 0; white = 0x40;
+          useAnimations = true;
+      }
+      else if( owner == resistance )
+      {
+          red = 0; green = 0x1f; blue = 0xff;; white = 0;
+          useAnimations = true;
+      }
+      else if( owner == enlightened )
+      {
+          red = 0x1f; green = 0xff; blue = 0; white = 0;
+          useAnimations = true;
+      }
+
+      if (useAnimations) {
+          unsigned int queueSize = animationQueue.size();
+          if (queueSize > 1) {
+              if (animationQueue.peek()->done(states[0])) {
+                  animationQueue.remove();
+                  queueSize--;
+                  animationQueue.peek()->start(states[0]);
+              }
+          }
+          if (queueSize > 0) {
+              //strip.setBrightness(255);
+              strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
+              //pCurrAnimation->doFrame(states[0], strip);
+              animationQueue.peek()->doFrame(states[0], strip);
+          }
+      } else {
+          for(i=0; i < strip.numPixels(); i++)
+          {
+              //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
+              //        strip.setPixelColor(i, green, red, blue,white);
+              strip.setPixelColor(i, red, green, blue);
+              //        float scale = ((millis()/100)%100)/200.0 + 0.5;
+              float scale = 1.0f;
+              float pct = percent * scale;
+              //        Serial.print("Percent: "); Serial.println(pct, 4);
+              strip.setBrightness((uint8_t)((uint16_t)(255*(pct/100.0))));
+          }
+          strip.show();
+      }
+
+      dir++;
+      if( dir >= NUM_STRINGS )
+          dir = 0;
   }
 
 
