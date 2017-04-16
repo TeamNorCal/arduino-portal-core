@@ -59,11 +59,16 @@ struct RedFlashState : public CommonState {
     bool isRgbw;
 };
 
+struct SolidColorState : public CommonState {
+    Color color;
+};
+
 union AnimationState {
     CommonState      common;
     MovingPulseState movingPulse;
     PulseState       pulse;
     RedFlashState    redFlash;
+    SolidColorState  solid;
 };
 
 // Contract of animation implemnations
@@ -251,9 +256,36 @@ class RedFlash : public Animation {
         const unsigned long EndRed = AnimationDuration * 0.75; // ms - when we finish fading red and go back to white
 };
 
+// A white-red-white flash, appropriate for a portal going from owned to unowned
+class SolidColor : public Animation {
+    public:
+        // Initialize state to animation start point
+        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color c) {
+            commonInit(state, strip);
+            SolidColorState& s = state.solid;
+            s.duration = AnimationDuration;
+            s.color = c;
+        }
+
+        // Draw a new frame of the animation
+        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+            SolidColorState& s = state.solid;
+            for (uint16_t i = 0; i < s.numPixels; i++) {
+                // FIXME: Sort out state management for queued animations, then uncomment this:
+//                strip.setPixelColor(i, s.c.w);
+                strip.setPixelColor(i, 0xff, 0xff, 0xff);
+            }
+            strip.show();
+        }
+
+    private:
+        const unsigned long AnimationDuration = 1000L; // ms - arbitrary here
+};
+
 // Collection of all supported animations
 struct Animations {
     MovingPulse movingPulse;
     Pulse pulse;
     RedFlash redFlash;
+    SolidColor solid;
 };

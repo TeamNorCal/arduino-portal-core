@@ -145,7 +145,8 @@ void loop()
               owner = neutral;
               animations.redFlash.init(states[0], strip, RGBW_SUPPORT);
               animationQueue.setTo(&animations.redFlash);
-              percent = 40;
+              animationQueue.add(&animations.solid);
+              percent = 20;
               break;
 
           default:
