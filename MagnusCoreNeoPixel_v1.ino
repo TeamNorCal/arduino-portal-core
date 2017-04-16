@@ -128,11 +128,12 @@ void loop()
               owner = cmd == 'E' ? enlightened : resistance;
               percent = getPercent(&command[1]);
               uint8_t red, green, blue, white;
-              red = 0x00;
-              green = owner == enlightened ? 0xff : 0x00;
-              blue = owner == resistance ? 0xff : 0x00;
-              white = 0x00;
-              animations.pulse.init(states[0], strip, red, green, blue, white);
+              Color c;
+              c = ToColor(0x00, 
+                  owner == enlightened ? 0xff : 0x00,
+                  owner == resistance ? 0xff : 0x00,
+                  0x00);
+              animations.pulse.init(states[0], strip, c);
               pCurrAnimation = &animations.pulse;
               break;
 

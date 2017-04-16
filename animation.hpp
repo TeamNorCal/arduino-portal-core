@@ -1,5 +1,31 @@
 #include <Adafruit_NeoPixel.h>
 
+union Color {
+    uint32_t w; // As packed value...w for 'word', lacking a better option
+    struct {
+        uint8_t white;
+        uint8_t red;
+        uint8_t green;
+        uint8_t blue;
+    } c; // As individual components...c for 'components'
+};
+
+// Convenience functions to initialize Color instances
+// Not constructors so Color can be included in unions
+
+Color ToColor(uint32_t color) {
+    Color c;
+    c.w = color;
+}
+
+Color ToColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
+    Color c;
+    c.c.red = red;
+    c.c.green = green;
+    c.c.blue = blue;
+    c.c.white = white;
+}
+
 // Animation State
 
 struct CommonState {
@@ -14,10 +40,7 @@ struct MovingPulseState : public CommonState {
 };
 
 struct PulseState : public CommonState {
-    uint8_t white;
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
+    Color color;
 };
 
 union AnimationState {
@@ -74,15 +97,13 @@ class MovingPulse : public Animation {
 class Pulse : public Animation {
     public:
         // Initialize state to animation start point
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
+        //void init(AnimationState& state, Adafruit_NeoPixel& strip, uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
+        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color) {
             PulseState& s = state.pulse;
             uint16_t numPixels = strip.numPixels();
             s.numPixels = numPixels;
             s.startTime = millis();
-            s.white = white;
-            s.red = red;
-            s.green = green;
-            s.blue = blue;
+            s.color = color;
         }
 
         // Draw a new frame of the animation
@@ -97,10 +118,10 @@ class Pulse : public Animation {
                 brightness= ((float) AnimationDuration - phase) / (AnimationDuration - BrightPoint);
             }
             float factor = (1.0f - MinBrightness) * brightness + MinBrightness;
-            uint8_t white = s.white * factor;
-            uint8_t red = s.red * factor;
-            uint8_t green = s.green * factor;
-            uint8_t blue = s.blue * factor;
+            uint8_t white = s.color.c.white * factor;
+            uint8_t red = s.color.c.red * factor;
+            uint8_t green = s.color.c.green * factor;
+            uint8_t blue = s.color.c.blue * factor;
 
             for (uint16_t i = 0; i < s.numPixels; i++) {
                 strip.setPixelColor(i, red, green, blue,white);
