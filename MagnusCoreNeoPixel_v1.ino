@@ -11,6 +11,9 @@
 
 const uint16_t LEDS_PER_STRAND = 50;
 
+// Mask to clear 'upper case' ASCII bit
+const char CASE_MASK = ~0x20;
+
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
 enum Ownership {  neutral = 0, enlightened, resistance };
 
@@ -23,6 +26,8 @@ struct pixel_string {
 Animations animations;
 
 AnimationState states[NUM_STRINGS];
+
+Animation *pCurrAnimation;
 
 pixel_string strings[NUM_STRINGS];
 
@@ -115,25 +120,52 @@ void loop()
 
   if( collect_serial() )
   {
-    // we have valid buffer of serial input
-    if( command[0] == 'e' || command[0] == 'E' )
-    {
-      owner = enlightened;
-      percent = getPercent(&command[1]);
-      animations.pulse.init(states[0], strip);
-    }
-    else if( command[0] == 'r' || command[0] == 'R' )
-    {
-      owner = resistance;
-      percent = getPercent(&command[1]);
-    }
-    else if( command[0] == 'n' || command[0] == 'N' )
-    {
-      owner = neutral;
-      percent = 100;
-    }
-    Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
-    Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
+      // we have valid buffer of serial input
+      char cmd = command[0] & CASE_MASK;
+      switch (cmd) {
+          case 'E':
+          case 'R':
+              owner = cmd == 'E' ? enlightened : resistance;
+              percent = getPercent(&command[1]);
+              uint8_t red, green, blue, white;
+              red = 0x00;
+              green = owner == enlightened ? 0xff : 0x00;
+              blue = owner == resistance ? 0xff : 0x00;
+              white = 0x00;
+              animations.pulse.init(states[0], strip, red, green, blue, white);
+              pCurrAnimation = &animations.pulse;
+              break;
+
+          case 'N':
+              owner = neutral;
+              percent = 100;
+              break;
+
+          default:
+              Serial.print("Unkwown command "); Serial.println(cmd);
+              break;
+      }
+      /*
+      if( cmd == 'E' )
+      {
+          owner = enlightened;
+          percent = getPercent(&command[1]);
+          animations.movingPulse.init(states[0], strip);
+          pCurrAnimation = &animations.movingPulse;
+      }
+      else if( command[0] == 'r' || command[0] == 'R' )
+      {
+          owner = resistance;
+          percent = getPercent(&command[1]);
+      }
+      else if( command[0] == 'n' || command[0] == 'N' )
+      {
+          owner = neutral;
+          percent = 100;
+      }
+      */
+      Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
+      Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
   }
 
   if(strings[dir].timing < millis() )
@@ -153,6 +185,7 @@ void loop()
     else if( owner == resistance )
     {
       red = 0; green = 0x1f; blue = 0xff;; white = 0;
+      useAnimations = true;
     }
     else if( owner == enlightened )
     {
@@ -161,8 +194,9 @@ void loop()
     }
   
     if (useAnimations) {
-        strip.setBrightness(255);
-        animations.pulse.doFrame(states[0], strip);
+        //strip.setBrightness(255);
+        strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
+        pCurrAnimation->doFrame(states[0], strip);
     } else {
         for(i=0; i < strip.numPixels(); i++)
         {
