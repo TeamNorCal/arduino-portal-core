@@ -1,5 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <stdlib.h>
+#include "animation.hpp"
 
 
 // first communication pin for neo pixel string
@@ -16,58 +17,6 @@ enum Ownership {  neutral = 0, enlightened, resistance };
 struct pixel_string {
   uint16_t phase;
   uint32_t timing;
-};
-
-// Animation State
-
-struct PulseState {
-    unsigned long startTime;
-};
-
-union AnimationState {
-    PulseState pulse;
-};
-
-// Contract of animation implemnations
-class Animation {
-    public:
-        virtual void init(AnimationState& state) = 0;
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) =0;
-};
-
-// Animation implemntations
-
-class Pulse : public Animation {
-    public:
-        // Initialize state to animation start point
-        virtual void init(AnimationState& state) override {
-            state.pulse.startTime = millis();
-        }
-
-        // Draw a new frame of the animation
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
-            unsigned long phase = (millis() - state.pulse.startTime) % AnimationDuration; // In ms
-            uint16_t startPixel = phase * PixelsPerMs;
-            Serial.print("Start pixel: "); Serial.println(startPixel, DEC);
-            for (uint16_t i = 0; i < LEDS_PER_STRAND; i++) {
-                if (i >= startPixel && i < startPixel + PulseLength) {
-                    strip.setPixelColor(i, 0, 0xff, 0);
-                } else {
-                    strip.setPixelColor(i, 0, 0, 0);
-                }
-            }
-            strip.show();
-        }
-
-    private:
-        const unsigned long AnimationDuration = 4000l; // ms
-        const uint16_t PulseLength = LEDS_PER_STRAND / 8;
-        const float PixelsPerMs = (float) LEDS_PER_STRAND / AnimationDuration;
-};
-
-// Collection of all supported animations
-struct Animations {
-    Pulse pulse;
 };
 
 // Static animation implementations singleton
@@ -171,7 +120,7 @@ void loop()
     {
       owner = enlightened;
       percent = getPercent(&command[1]);
-      animations.pulse.init(states[0]);
+      animations.pulse.init(states[0], strip);
     }
     else if( command[0] == 'r' || command[0] == 'R' )
     {
