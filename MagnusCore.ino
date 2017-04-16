@@ -30,13 +30,14 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800
 
 
 // Serial I/O
-int8_t command[64];
+const int ioSize = 64;
+int8_t command[ioSize];
 int8_t in_index = 0;
 
 void start_serial(void)
 {
   in_index = 0;
-  Serial.begin(9600);
+  Serial.begin(115200);
 }
 
 bool collect_serial(void)
@@ -59,7 +60,7 @@ bool collect_serial(void)
     else
     {
       command[in_index] = ch;
-      if ( in_index < sizeof(command) - 1 ) {
+      if ( in_index < (sizeof(command)/sizeof(command[0])) - 2 ) {
         in_index++;
       }
       //if( in_index >= 32 ) //sizeof(command) )
@@ -117,22 +118,19 @@ void loop()
       case 'e':
         owner = enlightened;
         //percent = getPercent(&command[1]);
-        Serial.println("OK");
         break;
       case 'R':
       case 'r':
         owner = resistance;
         //percent = getPercent(&command[1]);
-        Serial.println("OK");
         break;
       case 'n':
       case 'N':
         owner = neutral;
         percent = 100;
-        Serial.println("OK");
         break;
       default:
-        Serial.println("?");
+        break;
         //Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": ");
         //Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC);
     }
