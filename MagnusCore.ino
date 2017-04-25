@@ -1,5 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <stdlib.h>
+#include <string.h>
 #include "animation.hpp"
 #include "circbuff.hpp"
 
@@ -47,36 +48,39 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, (RGBW_SUPPORT ? NEO_RG
 
 
 // Serial I/O
+const int ioSize = 64;
 char command[32];
 int8_t in_index = 0;
 
 void start_serial(void)
 {
   in_index = 0;
-  Serial.begin(9600);
+  Serial.begin(115200);
 }
 
 bool collect_serial(void)
 {
-  while( Serial.available() > 0 )
+  while ( Serial.available() > 0 )
   {
     int8_t ch = Serial.read();
-    if( ch == '\n' ) 
+    if ( ch == '\n' )
     {
       command[in_index] = 0; // terminate
-      if( in_index > 0 )
+      if ( in_index > 0 )
       {
         in_index = 0;
         return true;
       }
     }
-    else if( ch == 0x0a || ch == 0x13 ) // carriage return or linefeed (ignore
+    else if ( ch == 0x0a || ch == 0x13 ) // carriage return or linefeed (ignore
     {
     }
     else
     {
       command[in_index] = ch;
-      in_index++;
+      if ( in_index < (sizeof(command)/sizeof(command[0])) - 2 ) {
+        in_index++;
+      }
       //if( in_index >= 32 ) //sizeof(command) )
       //  in_index = 0;
     }
@@ -86,7 +90,7 @@ bool collect_serial(void)
 
 uint8_t getPercent(const char *buffer)
 {
-  unsigned long inVal = strtoul(buffer,NULL,10);
+  unsigned long inVal = strtoul(buffer, NULL, 10);
   return uint8_t( constrain(inVal, 0, 100) );
 }
 
@@ -97,14 +101,14 @@ uint8_t owner;    // 0=neutral, 1=enl, 2=res
 
 
 // the setup function runs once when you press reset or power the board
-void setup() 
+void setup()
 {
   start_serial();
   strip.begin();
   uint8_t i;
-  for( i = 0; i<NUM_STRINGS; i++)
+  for ( i = 0; i < NUM_STRINGS; i++)
   {
-    strip.setPin(i+BASE_PIN);
+    strip.setPin(i + BASE_PIN);
     strip.show(); // Initialize all pixels to 'off'
 
     strings[i].phase = 0;
@@ -117,7 +121,7 @@ void setup()
 }
 
 // the loop function runs over and over again forever
-void loop() 
+void loop()
 {
   uint16_t i, val;
 
@@ -126,6 +130,9 @@ void loop()
       // we have valid buffer of serial input
       char cmd = command[0] & CASE_MASK;
       switch (cmd) {
+          case '*':
+            Serial.println("Magnus Core Node");
+            break;
           case 'E':
           case 'R':
               owner = cmd == 'E' ? enlightened : resistance;
