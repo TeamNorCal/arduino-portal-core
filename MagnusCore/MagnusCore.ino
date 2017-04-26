@@ -5,13 +5,17 @@
 #include "circbuff.hpp"
 
 // first communication pin for neo pixel string
-#define BASE_PIN 2
+const unsigned int BASE_PIN = 2;
 
-#define NUM_STRINGS 1 // one for each resonator
+const unsigned int NUM_STRINGS = 1;
 //#define NUM_STRINGS 8 // one for each resonator
 
 const uint16_t LEDS_PER_STRAND = 50;
 const bool RGBW_SUPPORT = false;
+const unsigned int QUEUE_SIZE = 3;
+
+// Mask to clear 'upper case' ASCII bit
+const char CASE_MASK = ~0x20;
 
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
 enum Ownership {  neutral = 0, enlightened, resistance };
@@ -19,9 +23,9 @@ enum Ownership {  neutral = 0, enlightened, resistance };
 // Static animation implementations singleton
 Animations animations;
 
-AnimationState states[NUM_STRINGS];
+typedef CircularBuffer<Animation *, QUEUE_SIZE> QueueType;
 
-typedef CircularBuffer<Animation *> QueueType;
+AnimationState states[NUM_STRINGS][QUEUE_SIZE];
 QueueType animationQueues[NUM_STRINGS];
 
 // Parameter 1 = number of pixels in strip
@@ -115,6 +119,7 @@ void loop()
         // we have valid buffer of serial input
         char cmd = command[0];
         switch (cmd) {
+            Color c;
             case '*':
                 Serial.println("Magnus Core Node");
                 break;
@@ -122,18 +127,18 @@ void loop()
             case 'e':
             case 'R':
             case 'r':
-                owner = cmd == 'E' ? enlightened : resistance;
+                owner = (cmd & CASE_MASK) == 'E' ? enlightened : resistance;
                 percent = getPercent(&command[1]);
                 uint8_t red, green, blue, white;
-                Color c;
                 c = ToColor(0x00, 
                         owner == enlightened ? 0xff : 0x00,
                         owner == resistance ? 0xff : 0x00,
                         0x00);
                 for (int i = 0; i < NUM_STRINGS; i++) {
                     QueueType& animationQueue = animationQueues[i];
-                    animations.pulse.init(states[i], strip, c);
                     animationQueue.setTo(&animations.pulse);
+                    unsigned int stateIdx = animationQueue.lastIdx();
+                    animations.pulse.init(states[i][stateIdx], strip, c);
                 }
                 break;
 
@@ -141,11 +146,19 @@ void loop()
             case 'n':
                 owner = neutral;
                 percent = 20;
+                if (RGBW_SUPPORT) {
+                    c = ToColor(0x00, 0x00, 0x00, 0xff);
+                } else {
+                    c = ToColor(0xff, 0xff, 0xff);
+                }
                 for (int i = 0; i < NUM_STRINGS; i++) {
                     QueueType& animationQueue = animationQueues[i];
-                    animations.redFlash.init(states[i], strip, RGBW_SUPPORT);
                     animationQueue.setTo(&animations.redFlash);
+                    unsigned int stateIdx = animationQueue.lastIdx();
+                    animations.redFlash.init(states[i][stateIdx], strip, RGBW_SUPPORT);
                     animationQueue.add(&animations.solid);
+                    stateIdx = animationQueue.lastIdx();
+                    animations.solid.init(states[i][stateIdx], strip, c);
                 }
                 break;
 
@@ -162,17 +175,17 @@ void loop()
     QueueType& animationQueue = animationQueues[dir];
     unsigned int queueSize = animationQueue.size();
     if (queueSize > 1) {
-        if (animationQueue.peek()->done(states[dir])) {
+        if (animationQueue.peek()->done(states[dir][animationQueue.currIdx()])) {
             animationQueue.remove();
             queueSize--;
-            animationQueue.peek()->start(states[dir]);
+            animationQueue.peek()->start(states[dir][animationQueue.currIdx()]);
         }
     }
     if (queueSize > 0) {
         //strip.setBrightness(255);
         strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
         //pCurrAnimation->doFrame(states[0], strip);
-        animationQueue.peek()->doFrame(states[dir], strip);
+        animationQueue.peek()->doFrame(states[dir][animationQueue.currIdx()], strip);
     }
 
     // Update one strand each time through the loop

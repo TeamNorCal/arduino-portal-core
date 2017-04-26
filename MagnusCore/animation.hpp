@@ -271,9 +271,7 @@ class SolidColor : public Animation {
         virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
             SolidColorState& s = state.solid;
             for (uint16_t i = 0; i < s.numPixels; i++) {
-                // FIXME: Sort out state management for queued animations, then uncomment this:
-//                strip.setPixelColor(i, s.c.w);
-                strip.setPixelColor(i, 0xff, 0xff, 0xff);
+                strip.setPixelColor(i, s.color.w);
             }
             strip.show();
         }
