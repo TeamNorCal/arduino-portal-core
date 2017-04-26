@@ -13,27 +13,16 @@
 const uint16_t LEDS_PER_STRAND = 50;
 const bool RGBW_SUPPORT = false;
 
-// Mask to clear 'upper case' ASCII bit
-const char CASE_MASK = ~0x20;
-
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
 enum Ownership {  neutral = 0, enlightened, resistance };
-
-struct pixel_string {
-  uint16_t phase;
-  uint32_t timing;
-};
 
 // Static animation implementations singleton
 Animations animations;
 
 AnimationState states[NUM_STRINGS];
 
-//Animation *pCurrAnimation;
-
-CircularBuffer<Animation *> animationQueue;
-
-pixel_string strings[NUM_STRINGS];
+typedef CircularBuffer<Animation *> QueueType;
+QueueType animationQueues[NUM_STRINGS];
 
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = Arduino pin number (most are valid)
@@ -94,10 +83,9 @@ uint8_t getPercent(const char *buffer)
   return uint8_t( constrain(inVal, 0, 100) );
 }
 
-
 uint8_t dir;
 uint8_t percent;
-uint8_t owner;    // 0=neutral, 1=enl, 2=res
+Ownership owner;    // 0=neutral, 1=enl, 2=res
 
 
 // the setup function runs once when you press reset or power the board
@@ -110,12 +98,9 @@ void setup()
   {
     strip.setPin(i + BASE_PIN);
     strip.show(); // Initialize all pixels to 'off'
-
-    strings[i].phase = 0;
-    strings[i].timing = 0;
   }
 
-  dir = NORTH; // begin on the north resonator
+  dir = 0;
   owner = neutral;
   percent = 0;
 }
@@ -123,109 +108,75 @@ void setup()
 // the loop function runs over and over again forever
 void loop()
 {
-  uint16_t i, val;
+    uint16_t i, val;
 
-  if( collect_serial() )
-  {
-      // we have valid buffer of serial input
-      char cmd = command[0] & CASE_MASK;
-      switch (cmd) {
-          case '*':
-            Serial.println("Magnus Core Node");
-            break;
-          case 'E':
-          case 'R':
-              owner = cmd == 'E' ? enlightened : resistance;
-              percent = getPercent(&command[1]);
-              uint8_t red, green, blue, white;
-              Color c;
-              c = ToColor(0x00, 
-                  owner == enlightened ? 0xff : 0x00,
-                  owner == resistance ? 0xff : 0x00,
-                  0x00);
-              animations.pulse.init(states[0], strip, c);
-//              pCurrAnimation = &animations.pulse;
-              animationQueue.setTo(&animations.pulse);
-              break;
+    if( collect_serial() )
+    {
+        // we have valid buffer of serial input
+        char cmd = command[0];
+        switch (cmd) {
+            case '*':
+                Serial.println("Magnus Core Node");
+                break;
+            case 'E':
+            case 'e':
+            case 'R':
+            case 'r':
+                owner = cmd == 'E' ? enlightened : resistance;
+                percent = getPercent(&command[1]);
+                uint8_t red, green, blue, white;
+                Color c;
+                c = ToColor(0x00, 
+                        owner == enlightened ? 0xff : 0x00,
+                        owner == resistance ? 0xff : 0x00,
+                        0x00);
+                for (int i = 0; i < NUM_STRINGS; i++) {
+                    QueueType& animationQueue = animationQueues[i];
+                    animations.pulse.init(states[i], strip, c);
+                    animationQueue.setTo(&animations.pulse);
+                }
+                break;
 
-          case 'N':
-              owner = neutral;
-              animations.redFlash.init(states[0], strip, RGBW_SUPPORT);
-              animationQueue.setTo(&animations.redFlash);
-              animationQueue.add(&animations.solid);
-              percent = 20;
-              break;
+            case 'N':
+            case 'n':
+                owner = neutral;
+                percent = 20;
+                for (int i = 0; i < NUM_STRINGS; i++) {
+                    QueueType& animationQueue = animationQueues[i];
+                    animations.redFlash.init(states[i], strip, RGBW_SUPPORT);
+                    animationQueue.setTo(&animations.redFlash);
+                    animationQueue.add(&animations.solid);
+                }
+                break;
 
-          default:
-              Serial.print("Unkwown command "); Serial.println(cmd);
-              break;
-      }
-      Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
-      Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
-  }
+            default:
+                Serial.print("Unkwown command "); Serial.println(cmd);
+                break;
+        }
+        Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
+        Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
+    }
 
-  if(strings[dir].timing < millis() )
-  {
-      strings[dir].timing += 10; // every 100 milliseconds we will check this direction
+    strip.setPin(dir + BASE_PIN);  // pick the string
 
-      strip.setPin(dir+BASE_PIN);  // pick the string
+    QueueType& animationQueue = animationQueues[dir];
+    unsigned int queueSize = animationQueue.size();
+    if (queueSize > 1) {
+        if (animationQueue.peek()->done(states[dir])) {
+            animationQueue.remove();
+            queueSize--;
+            animationQueue.peek()->start(states[dir]);
+        }
+    }
+    if (queueSize > 0) {
+        //strip.setBrightness(255);
+        strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
+        //pCurrAnimation->doFrame(states[0], strip);
+        animationQueue.peek()->doFrame(states[dir], strip);
+    }
 
-      uint8_t red, green, blue, white;
-      red = 0x20; green = 0; blue = 0x20; white = 0x20;
-      bool useAnimations = false;
-      if( owner == neutral ) 
-      {
-          red = 0x40; green = 0x40; blue = 0x40; white = 0x40;
-          //      red = 0; green = 0; blue = 0; white = 0x40;
-          useAnimations = true;
-      }
-      else if( owner == resistance )
-      {
-          red = 0; green = 0x1f; blue = 0xff;; white = 0;
-          useAnimations = true;
-      }
-      else if( owner == enlightened )
-      {
-          red = 0x1f; green = 0xff; blue = 0; white = 0;
-          useAnimations = true;
-      }
-
-      if (useAnimations) {
-          unsigned int queueSize = animationQueue.size();
-          if (queueSize > 1) {
-              if (animationQueue.peek()->done(states[0])) {
-                  animationQueue.remove();
-                  queueSize--;
-                  animationQueue.peek()->start(states[0]);
-              }
-          }
-          if (queueSize > 0) {
-              //strip.setBrightness(255);
-              strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
-              //pCurrAnimation->doFrame(states[0], strip);
-              animationQueue.peek()->doFrame(states[0], strip);
-          }
-      } else {
-          for(i=0; i < strip.numPixels(); i++)
-          {
-              //strip.setPixelColor(i, green,blue,red); // for RGB order is funny?
-              //        strip.setPixelColor(i, green, red, blue,white);
-              strip.setPixelColor(i, red, green, blue);
-              //        float scale = ((millis()/100)%100)/200.0 + 0.5;
-              float scale = 1.0f;
-              float pct = percent * scale;
-              //        Serial.print("Percent: "); Serial.println(pct, 4);
-              strip.setBrightness((uint8_t)((uint16_t)(255*(pct/100.0))));
-          }
-          strip.show();
-      }
-
-      dir++;
-      if( dir >= NUM_STRINGS )
-          dir = 0;
-  }
-
-
+    // Update one strand each time through the loop
+    dir = (dir + 1) % NUM_STRINGS;
 }
 
 
