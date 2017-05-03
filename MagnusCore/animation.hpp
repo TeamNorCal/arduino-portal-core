@@ -142,12 +142,16 @@ class MovingPulse : public Animation {
 class Pulse : public Animation {
     public:
         // Initialize state to animation start point
-        //void init(AnimationState& state, Adafruit_NeoPixel& strip, uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color) {
+        // color - the color of the LEDs, the brightness of which will be modulated
+        // initialPhase - in range [0.0, 1.0]; the offset within a cycle of the animation at which to start
+        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color, double initialPhase = 0.0) {
             commonInit(state, strip);
             PulseState& s = state.pulse;
             s.duration = AnimationDuration;
             s.color = color;
+            // Modify the start time to effect a desired initial phase within the cyle
+            double initialPhaseMs = initialPhase * AnimationDuration;
+            s.startTime -= initialPhaseMs;
         }
 
         // Draw a new frame of the animation
@@ -184,7 +188,7 @@ class Pulse : public Animation {
         const unsigned long AnimationDuration = 4000l; // ms
         const float FullBrightnessPoint = 0.5; // As a fraction of 1. At what point in the cycle should we achieve full brightness?
         const unsigned long BrightPoint = AnimationDuration * FullBrightnessPoint;
-        const float MinBrightness = 0.25;
+        const float MinBrightness = 0.1;
 };
 
 // A white-red-white flash, appropriate for a portal going from owned to unowned

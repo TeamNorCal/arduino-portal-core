@@ -10,8 +10,8 @@ const unsigned int BASE_PIN = 2;
 const unsigned int NUM_STRINGS = 1;
 //#define NUM_STRINGS 8 // one for each resonator
 
-const uint16_t LEDS_PER_STRAND = 50;
-const bool RGBW_SUPPORT = false;
+const uint16_t LEDS_PER_STRAND = 240;
+const bool RGBW_SUPPORT = true;
 const unsigned int QUEUE_SIZE = 3;
 
 // Mask to clear 'upper case' ASCII bit
@@ -37,7 +37,7 @@ QueueType animationQueues[NUM_STRINGS];
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
 //Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, BASE_PIN, NEO_RGBW + NEO_KHZ800);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(50, BASE_PIN, (RGBW_SUPPORT ? NEO_RGBW : NEO_RGB) + NEO_KHZ800);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(LEDS_PER_STRAND, BASE_PIN, (RGBW_SUPPORT ? NEO_GRBW : NEO_RGB) + NEO_KHZ800);
 
 
 // Serial I/O
@@ -65,10 +65,7 @@ bool collect_serial(void)
         return true;
       }
     }
-    else if ( ch == 0x0a || ch == 0x13 ) // carriage return or linefeed (ignore
-    {
-    }
-    else
+    else if (ch != '\r') // ignore CR
     {
       command[in_index] = ch;
       if ( in_index < (sizeof(command)/sizeof(command[0])) - 2 ) {
@@ -113,6 +110,9 @@ void setup()
 void loop()
 {
     uint16_t i, val;
+    // Voodoo magic - timing is slow without a delay thrown in
+    // I think writing the LEDs disables interrupts which affects incremneting of time
+    delay(10);
 
     if( collect_serial() )
     {
@@ -138,12 +138,13 @@ void loop()
                     QueueType& animationQueue = animationQueues[i];
                     animationQueue.setTo(&animations.pulse);
                     unsigned int stateIdx = animationQueue.lastIdx();
-                    animations.pulse.init(states[i][stateIdx], strip, c);
+                    double initialPhase = ((double) i) / NUM_STRINGS;
+                    animations.pulse.init(states[i][stateIdx], strip, c, initialPhase);
                 }
                 break;
 
             case 'N':
-            case 'n':
+            //case 'n':
                 owner = neutral;
                 percent = 20;
                 if (RGBW_SUPPORT) {

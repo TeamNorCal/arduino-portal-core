@@ -47,7 +47,7 @@ class CircularBuffer {
         }
 
     private:
-        inc(unsigned int& x) {
+        void inc(unsigned int& x) {
             x++;
             if (x >= BuffSize) {
                 x = 0;
