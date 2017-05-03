@@ -46,7 +46,7 @@ struct CommonState {
 };
 
 struct MovingPulseState : public CommonState {
-    uint32_t color;
+    Color color;
     uint16_t pulseLength;
     float pixelsPerMs;
 };
@@ -102,7 +102,7 @@ class Animation {
 class MovingPulse : public Animation {
     public:
         // Initialize state to animation start point
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, uint32_t color) {
+        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color) {
             commonInit(state, strip);
             MovingPulseState& s = state.movingPulse;
             s.duration = AnimationDuration;
@@ -119,7 +119,7 @@ class MovingPulse : public Animation {
             uint16_t startPixel = phase * s.pixelsPerMs;
             for (uint16_t i = 0; i < s.numPixels; i++) {
                 if (i >= startPixel && i < startPixel + s.pulseLength) {
-                    strip.setPixelColor(i, s.color);
+                    strip.setPixelColor(i, s.color.w);
                 } else {
                     strip.setPixelColor(i, 0, 0, 0);
                 }
