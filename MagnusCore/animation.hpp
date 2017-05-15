@@ -74,25 +74,25 @@ union AnimationState {
 // Contract of animation implemnations
 class Animation {
     public:
-        void commonInit(AnimationState& state, Adafruit_NeoPixel& strip) {
+        void commonInit(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) {
             CommonState& s = state.common;
-            s.startTime = millis();
+            s.startTime = now;
             s.numPixels = strip.numPixels();
         }
 
-        virtual void start(AnimationState& state) {
-            state.common.startTime = millis();
+        virtual void start(unsigned long now, AnimationState& state) {
+            state.common.startTime = now;
         }
 
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) =0;
+        virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) =0;
         // How many cycles have completed?
-        virtual uint32_t cyclesComplete(const AnimationState& state) const {
-            return (millis() - state.common.startTime) / state.common.duration;
+        virtual uint32_t cyclesComplete(unsigned long now, const AnimationState& state) const {
+            return (now - state.common.startTime) / state.common.duration;
         }
         // Checks to see if at least one full cycle has completed. Useful for
         // transient animations.
-        bool done(const AnimationState& state) const {
-            return cyclesComplete(state) > 0;
+        bool done(unsigned long now, const AnimationState& state) const {
+            return cyclesComplete(now, state) > 0;
         }
 };
 
@@ -102,8 +102,8 @@ class Animation {
 class MovingPulse : public Animation {
     public:
         // Initialize state to animation start point
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color) {
-            commonInit(state, strip);
+        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, Color color) {
+            commonInit(now, state, strip);
             MovingPulseState& s = state.movingPulse;
             s.duration = AnimationDuration;
             s.color = color;
@@ -112,10 +112,10 @@ class MovingPulse : public Animation {
         }
 
         // Draw a new frame of the animation
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+        virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) override {
             MovingPulseState& s = state.movingPulse;
 
-            unsigned long phase = (millis() - s.startTime) % AnimationDuration; // In ms
+            unsigned long phase = (now - s.startTime) % AnimationDuration; // In ms
             uint16_t startPixel = phase * s.pixelsPerMs;
             for (uint16_t i = 0; i < s.numPixels; i++) {
                 if (i >= startPixel && i < startPixel + s.pulseLength) {
@@ -126,12 +126,6 @@ class MovingPulse : public Animation {
             }
             strip.show();
         }
-
-        /*
-        virtual uint32_t cyclesComplete(const AnimationState& state) const override {
-            return (millis() - state.movingPulse.startTime) / AnimationDuration;
-        }
-        */
 
     private:
         const unsigned long AnimationDuration = 4000l; // ms
@@ -144,8 +138,8 @@ class Pulse : public Animation {
         // Initialize state to animation start point
         // color - the color of the LEDs, the brightness of which will be modulated
         // initialPhase - in range [0.0, 1.0]; the offset within a cycle of the animation at which to start
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color color, double initialPhase = 0.0) {
-            commonInit(state, strip);
+        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, Color color, double initialPhase = 0.0) {
+            commonInit(now, state, strip);
             PulseState& s = state.pulse;
             s.duration = AnimationDuration;
             s.color = color;
@@ -155,11 +149,11 @@ class Pulse : public Animation {
         }
 
         // Draw a new frame of the animation
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+        virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) override {
             PulseState& s = state.pulse;
             //Serial.print("Doing pulse frame "); Serial.println(s.color.w, HEX);
 
-            unsigned long phase = (millis() - s.startTime) % AnimationDuration; // In ms
+            unsigned long phase = (now - s.startTime) % AnimationDuration; // In ms
             float brightness;
             if (phase < BrightPoint) {
                 brightness = ((float) phase) / BrightPoint;
@@ -178,12 +172,6 @@ class Pulse : public Animation {
             strip.show();
         }
 
-        /*
-        virtual uint32_t cyclesComplete(const AnimationState& state) const override {
-            return (millis() - state.pulse.startTime) / AnimationDuration;
-        }
-        */
-
     private:
         const unsigned long AnimationDuration = 4000l; // ms
         const float FullBrightnessPoint = 0.5; // As a fraction of 1. At what point in the cycle should we achieve full brightness?
@@ -196,18 +184,18 @@ class RedFlash : public Animation {
     public:
         // Initialize state to animation start point
         //void init(AnimationState& state, Adafruit_NeoPixel& strip, uint8_t red, uint8_t green, uint8_t blue, uint8_t white) {
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, bool isRgbw) {
-            commonInit(state, strip);
+        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, bool isRgbw) {
+            commonInit(now, state, strip);
             RedFlashState& s = state.redFlash;
             s.duration = AnimationDuration;
             s.isRgbw = isRgbw;
         }
 
         // Draw a new frame of the animation
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+        virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) override {
             RedFlashState& s = state.redFlash;
 
-            unsigned long phase = (millis() - s.startTime) % AnimationDuration; // In ms
+            unsigned long phase = (now - s.startTime) % AnimationDuration; // In ms
 
             Color c;
             if (phase < StartRed || phase > EndRed) {
@@ -246,12 +234,6 @@ class RedFlash : public Animation {
             strip.show();
         }
 
-        /*
-        virtual uint32_t cyclesComplete(const AnimationState& state) const override {
-            return (millis() - state.pulse.startTime) / AnimationDuration;
-        }
-        */
-
     private:
         const unsigned long AnimationDuration = 1000L; // ms
         const unsigned long StartRed = AnimationDuration * 0.25; // ms - when we start ramping up red
@@ -264,15 +246,15 @@ class RedFlash : public Animation {
 class SolidColor : public Animation {
     public:
         // Initialize state to animation start point
-        void init(AnimationState& state, Adafruit_NeoPixel& strip, Color c) {
-            commonInit(state, strip);
+        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, Color c) {
+            commonInit(now, state, strip);
             SolidColorState& s = state.solid;
             s.duration = AnimationDuration;
             s.color = c;
         }
 
         // Draw a new frame of the animation
-        virtual void doFrame(AnimationState& state, Adafruit_NeoPixel& strip) override {
+        virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) override {
             SolidColorState& s = state.solid;
             for (uint16_t i = 0; i < s.numPixels; i++) {
                 strip.setPixelColor(i, s.color.w);

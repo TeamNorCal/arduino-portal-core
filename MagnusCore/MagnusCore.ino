@@ -17,6 +17,8 @@ const unsigned int QUEUE_SIZE = 3;
 // Mask to clear 'upper case' ASCII bit
 const char CASE_MASK = ~0x20;
 
+const unsigned long LED_UPDATE_PERIOD = 5; // in ms. Time between drawing a frame on _any_ LED strip.
+
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
 enum Ownership {  neutral = 0, enlightened, resistance };
 enum SerialStatus { IDLE, IN_PROGRESS, COMMAND_COMPLETE };
@@ -45,6 +47,8 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(LEDS_PER_STRAND, BASE_PIN, (RGBW_SUP
 const int ioSize = 64;
 char command[32];
 int8_t in_index = 0;
+
+unsigned long nextUpdate;
 
 void start_serial(void)
 {
@@ -117,15 +121,14 @@ void setup()
   dir = 0;
   owner = neutral;
   percent = 0;
+  nextUpdate = millis();
 }
 
 // the loop function runs over and over again forever
 void loop()
 {
     uint16_t i, val;
-    // Voodoo magic - timing is slow without a delay thrown in
-    // I think writing the LEDs disables interrupts which affects incrementing of time
-    delay(5);
+    unsigned long now = millis();
 
     SerialStatus status = collect_serial();
     if (status == COMMAND_COMPLETE)
@@ -178,7 +181,7 @@ void loop()
                         animationQueue.setTo(&animations.pulse);
                         unsigned int stateIdx = animationQueue.lastIdx();
                         double initialPhase = ((double) i) / NUM_STRINGS;
-                        animations.pulse.init(states[i][stateIdx], strip, c, initialPhase);
+                        animations.pulse.init(now, states[i][stateIdx], strip, c, initialPhase);
                     }
                     break;
 
@@ -193,10 +196,10 @@ void loop()
                         QueueType& animationQueue = animationQueues[i];
                         animationQueue.setTo(&animations.redFlash);
                         unsigned int stateIdx = animationQueue.lastIdx();
-                        animations.redFlash.init(states[i][stateIdx], strip, RGBW_SUPPORT);
+                        animations.redFlash.init(now, states[i][stateIdx], strip, RGBW_SUPPORT);
                         animationQueue.add(&animations.solid);
                         stateIdx = animationQueue.lastIdx();
-                        animations.solid.init(states[i][stateIdx], strip, c);
+                        animations.solid.init(now, states[i][stateIdx], strip, c);
                     }
                     break;
 
@@ -211,23 +214,25 @@ void loop()
 
     // If we're in the process of getting a serial command, don't service the LEDs: this process disables interrupts,
     // which can cause us to miss characters
-    if (status == IDLE) {
+    if (status == IDLE && now >= nextUpdate) {
+        nextUpdate = now + LED_UPDATE_PERIOD;
+
         strip.setPin(dir + BASE_PIN);  // pick the string
 
         QueueType& animationQueue = animationQueues[dir];
         unsigned int queueSize = animationQueue.size();
         if (queueSize > 1) {
-            if (animationQueue.peek()->done(states[dir][animationQueue.currIdx()])) {
+            if (animationQueue.peek()->done(now, states[dir][animationQueue.currIdx()])) {
                 animationQueue.remove();
                 queueSize--;
-                animationQueue.peek()->start(states[dir][animationQueue.currIdx()]);
+                animationQueue.peek()->start(now, states[dir][animationQueue.currIdx()]);
             }
         }
         if (queueSize > 0) {
             //strip.setBrightness(255);
             strip.setBrightness((uint8_t)((uint16_t)(255*(percent/100.0))));
             //pCurrAnimation->doFrame(states[0], strip);
-            animationQueue.peek()->doFrame(states[dir][animationQueue.currIdx()], strip);
+            animationQueue.peek()->doFrame(now, states[dir][animationQueue.currIdx()], strip);
         }
 
         // Update one strand each time through the loop
