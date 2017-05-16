@@ -7,8 +7,7 @@
 // first communication pin for neo pixel string
 const unsigned int BASE_PIN = 2;
 
-const unsigned int NUM_STRINGS = 6;
-//#define NUM_STRINGS 8 // one for each resonator
+const unsigned int NUM_STRINGS = 8;
 
 const uint16_t LEDS_PER_STRAND = 108;
 const bool RGBW_SUPPORT = true;
@@ -19,8 +18,43 @@ const char CASE_MASK = ~0x20;
 
 const unsigned long LED_UPDATE_PERIOD = 5; // in ms. Time between drawing a frame on _any_ LED strip.
 
+//const long BAUD_RATE = 115200;
+const long BAUD_RATE = 9600;
+
+// Command format:
+// Fnnnnnnnnp12345678mmmm\n
+// F = faction: EeRrNn. Capitalized on state change; lowercase if same as before
+// n = resonator level
+// p = portal health percentage
+// 1-8 = resonator health percentage
+// m = mod status
+//
+// percentage health encoded as single character. Space (' ') is 0%, and then each ASCII character
+// above it is 2% greater, up to 'R' for 100%
+//
+// Mods:
+// ' ' - No mod present in this slot
+// '0' - FA Force Amp
+// '1' - HS-C Heat Shield, Common
+// '2' - HS-R Heat Shield, Rare
+// '3' - HS-VR Heat Shield, Very Rare
+// '4' - LA-R Link Amplifier, Rare
+// '5' - LA-VR Link Amplifier, Very Rare
+// '6' - SBUL SoftBank Ultra Link
+// '7' - MH-C MultiHack, Common
+// '8' - MH-R MultiHack, Rare
+// '9' - MH-VR MultiHack, Very Rare
+// 'A' - PS-C Portal Shield, Common
+// 'B' - PS-R Portal Shield, Rare
+// 'C' - PS-VR Portal Sheild, Very Rare
+// 'D' - AXA AXS Shield
+// 'E' - T Turret
+
+const unsigned int COMMAND_LENGTH = 22;
+const unsigned int PORTAL_STRENGTH_INDEX = 9;
+
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
-enum Ownership {  neutral = 0, enlightened, resistance };
+enum Ownership {  neutral = 0, enlightened, resistance, initial };
 enum SerialStatus { IDLE, IN_PROGRESS, COMMAND_COMPLETE };
 
 // Static animation implementations singleton
@@ -53,18 +87,13 @@ unsigned long nextUpdate;
 void start_serial(void)
 {
   in_index = 0;
-  Serial.begin(115200);
+  Serial.begin(BAUD_RATE);
 }
 
 SerialStatus collect_serial(void)
 {
-    SerialStatus status = IDLE;
+    SerialStatus status = in_index == 0 ? IDLE : IN_PROGRESS;
     int avail = Serial.available();
-/*
-    if (avail > 0) {
-        Serial.print("Avail: "); Serial.println(avail, DEC);
-    }
-*/
     while (Serial.available() > 0)
     {
         int8_t ch = Serial.read();
@@ -83,15 +112,8 @@ SerialStatus collect_serial(void)
             if ( in_index < (sizeof(command)/sizeof(command[0])) - 2 ) {
                 in_index++;
             }
-            status = IN_PROGRESS;
-            //if( in_index >= 32 ) //sizeof(command) )
-            //  in_index = 0;
-        } else {
-            status = IN_PROGRESS;
         }
     }
-    // If we've received the start of a command, return that we're 'in progress'
-    if (status == IN_PROGRESS) Serial.println("In progress");
     return status;
 }
 
@@ -99,6 +121,10 @@ uint8_t getPercent(const char *buffer)
 {
   unsigned long inVal = strtoul(buffer, NULL, 10);
   return uint8_t( constrain(inVal, 0, 100) );
+}
+
+unsigned int decodePercent(const char encoded) {
+    return (encoded - ' ') * 2;
 }
 
 uint8_t dir;
@@ -119,7 +145,8 @@ void setup()
   }
 
   dir = 0;
-  owner = neutral;
+  //owner = neutral;
+  owner = initial;
   percent = 0;
   nextUpdate = millis();
 }
@@ -146,17 +173,21 @@ void loop()
             case 'r':
                 int len;
                 len = strlen(command);
-                if (len != 3) {
+                if (len != COMMAND_LENGTH) {
                     Serial.print("Invalid length of command \"");Serial.print(command);Serial.print("\": ");Serial.println(len, DEC);
                     break;
                 }
                 newOwner = (cmd & CASE_MASK) == 'E' ? enlightened : resistance;
-                percent = getPercent(&command[1]);
+                char strength;
+                strength = command[PORTAL_STRENGTH_INDEX];
+                percent = decodePercent(strength);
+                //Serial.print("Owner ");Serial.print(newOwner, DEC);Serial.print(" pct ");Serial.println(percent, DEC);
                 break;
 
             case 'N':
             case 'n':
                 newOwner = neutral;
+                //Serial.println("Neutral");
                 break;
 
             default:
@@ -207,9 +238,9 @@ void loop()
                     Serial.print("Invalid owner "); Serial.println(owner);
                     break;
             }
+            Serial.print((char *)command); Serial.print(" - ");
+            Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
         }
-        Serial.print((char *)command); Serial.print(" - ");Serial.print(command[0],DEC);Serial.print(": "); 
-        Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
     }
 
     // If we're in the process of getting a serial command, don't service the LEDs: this process disables interrupts,
@@ -239,5 +270,3 @@ void loop()
         dir = (dir + 1) % NUM_STRINGS;
     }
 }
-
-
