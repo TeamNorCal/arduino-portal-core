@@ -253,8 +253,8 @@ class RedFlash : public Animation {
         const unsigned long StartRed = AnimationDuration * 0.0; // ms - when we start ramping up red
         const unsigned long MaxRedStart = AnimationDuration * 0.45; // ms - when we have full brightness red
         const unsigned long MaxRedEnd = AnimationDuration * 0.55; // ms - when we have full brightness red
-        //const unsigned long EndRed = AnimationDuration * 0.75; // ms - when we finish fading red and go back to white
-        const unsigned long EndRed = AnimationDuration * 1.0; // ms - when we finish fading red and go back to white
+        const unsigned long EndRed = AnimationDuration * 0.75; // ms - when we finish fading red and go back to white
+        //const unsigned long EndRed = AnimationDuration * 1.0; // ms - when we finish fading red and go back to white
 };
 
 // A white-red-white flash, appropriate for a portal going from owned to unowned
@@ -271,7 +271,9 @@ class SolidColor : public Animation {
         // Draw a new frame of the animation
         virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) override {
             SolidColorState& s = state.solid;
+//            Color green = ToColor(0x00, 0xff, 0x00, 0x00);
             for (uint16_t i = 0; i < s.numPixels; i++) {
+//                if (i == 50) strip.setPixelColor(i, green.w); else
                 strip.setPixelColor(i, s.color.w);
             }
             strip.show();
@@ -307,16 +309,16 @@ class WipeDown : public Animation {
             uint16_t cutoff = s.numPixels * currPct;
             uint16_t i;
             for (i = 0; i < cutoff; i++) {
-                strip.setPixelColor(i, s.to.w);
+                strip.setPixelColor(i, s.from.w);
             }
             for (; i < s.numPixels; i++) {
-                strip.setPixelColor(i, s.from.w);
+                strip.setPixelColor(i, s.to.w);
             }
             strip.show();
         }
 
     private:
-        const unsigned long MaxDuration = 2000l; // ms
+        const unsigned long MaxDuration = 700l; // ms
 };
 
 // Collection of all supported animations

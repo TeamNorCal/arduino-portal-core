@@ -11,12 +11,12 @@ const unsigned int NUM_STRINGS = 8;
 
 const uint16_t LEDS_PER_STRAND = 108;
 const bool RGBW_SUPPORT = true;
-const unsigned int QUEUE_SIZE = 4;
+const unsigned int QUEUE_SIZE = 5;
 
 // Mask to clear 'upper case' ASCII bit
 const char CASE_MASK = ~0x20;
 
-const unsigned long LED_UPDATE_PERIOD = 5; // in ms. Time between drawing a frame on _any_ LED strip.
+const unsigned long LED_UPDATE_PERIOD = 7; // in ms. Time between drawing a frame on _any_ LED strip.
 
 //const long BAUD_RATE = 115200;
 const long BAUD_RATE = 9600;
@@ -111,7 +111,7 @@ SerialStatus collect_serial(void)
                 return COMMAND_COMPLETE;
             }
         }
-        else if (ch != '\r') // ignore CR
+        else if (ch != '\r' && ch != '.') // ignore CR
         {
             command[in_index] = ch;
             if ( in_index < (sizeof(command)/sizeof(command[0])) - 2 ) {
@@ -236,9 +236,9 @@ void loop()
 
                 case neutral:
                     Color prevOwnerColor;
-                    prevOwnerColor = ToColor(newOwner == resistance ? 0x10 : 0x00, 
-                            newOwner == enlightened ? 0xff : 0x00,
-                            newOwner == resistance ? 0xff : 0x00,
+                    prevOwnerColor = ToColor(owner == resistance ? 0x10 : 0x00, 
+                            owner == enlightened ? 0xff : 0x00,
+                            owner == resistance ? 0xff : 0x00,
                             0x00);
                     Color neutralColor;
                     if (RGBW_SUPPORT) {
@@ -249,19 +249,25 @@ void loop()
                     Color black;
                     black = ToColor(0x00);
                     for (int i = 0; i < NUM_STRINGS; i++) {
+                        unsigned int stateIdx;
+
                         QueueType& animationQueue = animationQueues[i];
 
                         animationQueue.setTo(&animations.wipeDown);
-                        unsigned int stateIdx = animationQueue.lastIdx();
+                        stateIdx = animationQueue.lastIdx();
                         animations.wipeDown.init(now, states[i][stateIdx], strip, prevOwnerColor, black, level);
+                        /*
+                        */
 
                         animationQueue.add(&animations.redFlash);
                         stateIdx = animationQueue.lastIdx();
                         animations.redFlash.init(now, states[i][stateIdx], strip, RGBW_SUPPORT);
 
+                        /*
                         animationQueue.add(&animations.wipeDown);
                         stateIdx = animationQueue.lastIdx();
                         animations.wipeDown.init(now, states[i][stateIdx], strip, black, neutralColor, 1.0);
+                        */
 
                         animationQueue.add(&animations.solid);
                         stateIdx = animationQueue.lastIdx();
