@@ -11,7 +11,7 @@ const unsigned int NUM_STRINGS = 8;
 
 const uint16_t LEDS_PER_STRAND = 108;
 const bool RGBW_SUPPORT = true;
-const unsigned int QUEUE_SIZE = 3;
+const unsigned int QUEUE_SIZE = 4;
 
 // Mask to clear 'upper case' ASCII bit
 const char CASE_MASK = ~0x20;
@@ -51,7 +51,12 @@ const long BAUD_RATE = 9600;
 // 'E' - T Turret
 
 const unsigned int COMMAND_LENGTH = 22;
+const unsigned int RESONATOR_LEVEL_INDEX = 1;
+const unsigned int NUM_RESONATORS = 8;
+const unsigned int MAX_SUM_LEVEL = NUM_RESONATORS * 8;
 const unsigned int PORTAL_STRENGTH_INDEX = 9;
+
+const float MIN_LEVEL = 0.2; // The minium % of LEDs we'll light
 
 enum Direction { NORTH = 0, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST };
 enum Ownership {  neutral = 0, enlightened, resistance, initial };
@@ -129,6 +134,7 @@ unsigned int decodePercent(const char encoded) {
 
 uint8_t dir;
 uint8_t percent;
+uint8_t sumLevel; // Sum of resonator levels, range [0, 64]
 Ownership owner;    // 0=neutral, 1=enl, 2=res
 
 
@@ -147,6 +153,7 @@ void setup()
   dir = 0;
   //owner = neutral;
   owner = initial;
+  sumLevel = 0;
   percent = 0;
   nextUpdate = millis();
 }
@@ -163,6 +170,7 @@ void loop()
         // we have valid buffer of serial input
         char cmd = command[0];
         Ownership newOwner = owner;
+        uint8_t newSumLevel;
         switch (cmd) {
             case '*':
                 Serial.println("Magnus Core Node");
@@ -178,6 +186,11 @@ void loop()
                     break;
                 }
                 newOwner = (cmd & CASE_MASK) == 'E' ? enlightened : resistance;
+                newSumLevel = 0;
+                for (unsigned int res = RESONATOR_LEVEL_INDEX; res < RESONATOR_LEVEL_INDEX + NUM_RESONATORS; res++) {
+                    uint8_t rl = command[res] - '0';
+                    newSumLevel += rl;
+                }
                 char strength;
                 strength = command[PORTAL_STRENGTH_INDEX];
                 percent = decodePercent(strength);
@@ -187,6 +200,8 @@ void loop()
             case 'N':
             case 'n':
                 newOwner = neutral;
+                newSumLevel = 64;
+                percent = 20;
                 //Serial.println("Neutral");
                 break;
 
@@ -196,48 +211,70 @@ void loop()
         }
 
         // Check for ownership change
-        if (newOwner != owner) {
-            owner = newOwner;
+        if (newOwner != owner || newSumLevel != sumLevel) {
             Color c;
-            switch (owner) {
+            float level;
+            level = ((float) newSumLevel) / MAX_SUM_LEVEL;
+            level = min(1.0, level);
+            level = MIN_LEVEL + (level * (1.0f - MIN_LEVEL));
+            switch (newOwner) {
                 case enlightened:
                 case resistance:
                     uint8_t red, green, blue, white;
-                    c = ToColor(0x00, 
-                            owner == enlightened ? 0xff : 0x00,
-                            owner == resistance ? 0xff : 0x00,
+                    c = ToColor(newOwner == resistance ? 0x10 : 0x00, 
+                            newOwner == enlightened ? 0xff : 0x00,
+                            newOwner == resistance ? 0xff : 0x00,
                             0x00);
                     for (int i = 0; i < NUM_STRINGS; i++) {
                         QueueType& animationQueue = animationQueues[i];
                         animationQueue.setTo(&animations.pulse);
                         unsigned int stateIdx = animationQueue.lastIdx();
                         double initialPhase = ((double) i) / NUM_STRINGS;
-                        animations.pulse.init(now, states[i][stateIdx], strip, c, initialPhase);
+                        animations.pulse.init(now, states[i][stateIdx], strip, c, level, initialPhase);
                     }
                     break;
 
                 case neutral:
-                    percent = 20;
+                    Color prevOwnerColor;
+                    prevOwnerColor = ToColor(newOwner == resistance ? 0x10 : 0x00, 
+                            newOwner == enlightened ? 0xff : 0x00,
+                            newOwner == resistance ? 0xff : 0x00,
+                            0x00);
+                    Color neutralColor;
                     if (RGBW_SUPPORT) {
-                        c = ToColor(0x00, 0x00, 0x00, 0xff);
+                        neutralColor = ToColor(0x00, 0x00, 0x00, 0xff);
                     } else {
-                        c = ToColor(0xff, 0xff, 0xff);
+                        neutralColor = ToColor(0xff, 0xff, 0xff);
                     }
+                    Color black;
+                    black = ToColor(0x00);
                     for (int i = 0; i < NUM_STRINGS; i++) {
                         QueueType& animationQueue = animationQueues[i];
-                        animationQueue.setTo(&animations.redFlash);
+
+                        animationQueue.setTo(&animations.wipeDown);
                         unsigned int stateIdx = animationQueue.lastIdx();
+                        animations.wipeDown.init(now, states[i][stateIdx], strip, prevOwnerColor, black, level);
+
+                        animationQueue.add(&animations.redFlash);
+                        stateIdx = animationQueue.lastIdx();
                         animations.redFlash.init(now, states[i][stateIdx], strip, RGBW_SUPPORT);
+
+                        animationQueue.add(&animations.wipeDown);
+                        stateIdx = animationQueue.lastIdx();
+                        animations.wipeDown.init(now, states[i][stateIdx], strip, black, neutralColor, 1.0);
+
                         animationQueue.add(&animations.solid);
                         stateIdx = animationQueue.lastIdx();
-                        animations.solid.init(now, states[i][stateIdx], strip, c);
+                        animations.solid.init(now, states[i][stateIdx], strip, neutralColor);
                     }
                     break;
 
                 default:
-                    Serial.print("Invalid owner "); Serial.println(owner);
+                    Serial.print("Invalid owner "); Serial.println(newOwner);
                     break;
             }
+            owner = newOwner;
+            sumLevel = newSumLevel;
             Serial.print((char *)command); Serial.print(" - ");
             Serial.print("owner "); Serial.print(owner,DEC); Serial.print(", percent "); Serial.println(percent,DEC); 
         }

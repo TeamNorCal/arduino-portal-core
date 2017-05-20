@@ -53,6 +53,7 @@ struct MovingPulseState : public CommonState {
 
 struct PulseState : public CommonState {
     Color color;
+    uint16_t numLit;
 };
 
 struct RedFlashState : public CommonState {
@@ -63,12 +64,18 @@ struct SolidColorState : public CommonState {
     Color color;
 };
 
+struct WipeDownState : public CommonState {
+    Color from;
+    Color to;
+};
+
 union AnimationState {
     CommonState      common;
     MovingPulseState movingPulse;
     PulseState       pulse;
     RedFlashState    redFlash;
     SolidColorState  solid;
+    WipeDownState    wipeDown;
 };
 
 // Contract of animation implemnations
@@ -138,11 +145,13 @@ class Pulse : public Animation {
         // Initialize state to animation start point
         // color - the color of the LEDs, the brightness of which will be modulated
         // initialPhase - in range [0.0, 1.0]; the offset within a cycle of the animation at which to start
-        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, Color color, double initialPhase = 0.0) {
+        // level - percentage of LEDs to light, starting from bottom
+        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, Color color, float level, double initialPhase = 0.0) {
             commonInit(now, state, strip);
             PulseState& s = state.pulse;
             s.duration = AnimationDuration;
             s.color = color;
+            s.numLit = s.numPixels * level;
             // Modify the start time to effect a desired initial phase within the cyle
             double initialPhaseMs = initialPhase * AnimationDuration;
             s.startTime -= initialPhaseMs;
@@ -166,8 +175,12 @@ class Pulse : public Animation {
             uint8_t green = s.color.c.green * factor;
             uint8_t blue = s.color.c.blue * factor;
 
-            for (uint16_t i = 0; i < s.numPixels; i++) {
-                strip.setPixelColor(i, red, green, blue,white);
+            uint16_t i;
+            for (i = 0; i < s.numLit; i++) {
+                strip.setPixelColor(i, red, green, blue, white);
+            }
+            for (; i < s.numPixels; i++) {
+                strip.setPixelColor(i, 0, 0, 0, 0);
             }
             strip.show();
         }
@@ -236,10 +249,12 @@ class RedFlash : public Animation {
 
     private:
         const unsigned long AnimationDuration = 1000L; // ms
-        const unsigned long StartRed = AnimationDuration * 0.25; // ms - when we start ramping up red
+        //const unsigned long StartRed = AnimationDuration * 0.25; // ms - when we start ramping up red
+        const unsigned long StartRed = AnimationDuration * 0.0; // ms - when we start ramping up red
         const unsigned long MaxRedStart = AnimationDuration * 0.45; // ms - when we have full brightness red
         const unsigned long MaxRedEnd = AnimationDuration * 0.55; // ms - when we have full brightness red
-        const unsigned long EndRed = AnimationDuration * 0.75; // ms - when we finish fading red and go back to white
+        //const unsigned long EndRed = AnimationDuration * 0.75; // ms - when we finish fading red and go back to white
+        const unsigned long EndRed = AnimationDuration * 1.0; // ms - when we finish fading red and go back to white
 };
 
 // A white-red-white flash, appropriate for a portal going from owned to unowned
@@ -266,10 +281,49 @@ class SolidColor : public Animation {
         const unsigned long AnimationDuration = 1000L; // ms - arbitrary here
 };
 
+// Wipe from end of strand to beginning, replacing one color with another
+class WipeDown : public Animation {
+    public:
+        // Initialize state to animation start point
+        // from - starting color [of bottom of strip]
+        // to - ending color [at which top of strip starts]
+        // initLevel - in range [0.0, 1.0]; point at which division between 'from' and 'to' color. 1.0 corresponds to no 'to' color visible at start.
+        void init(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip, Color from, Color to, float initLevel) {
+            WipeDownState& s = state.wipeDown;
+            unsigned long actualDuration = MaxDuration * initLevel;
+            unsigned long offset = MaxDuration - actualDuration;
+            commonInit(now - offset, state, strip);
+            s.duration = MaxDuration; // Always set the max duration - we set the startTime back to account for this
+            s.from = from;
+            s.to = to;
+        }
+
+        // Draw a new frame of the animation
+        virtual void doFrame(unsigned long now, AnimationState& state, Adafruit_NeoPixel& strip) override {
+            WipeDownState& s = state.wipeDown;
+
+            unsigned long phase = (now - s.startTime) % MaxDuration; // In ms
+            float currPct = 1.0f - (((float) phase) / MaxDuration);
+            uint16_t cutoff = s.numPixels * currPct;
+            uint16_t i;
+            for (i = 0; i < cutoff; i++) {
+                strip.setPixelColor(i, s.to.w);
+            }
+            for (; i < s.numPixels; i++) {
+                strip.setPixelColor(i, s.from.w);
+            }
+            strip.show();
+        }
+
+    private:
+        const unsigned long MaxDuration = 2000l; // ms
+};
+
 // Collection of all supported animations
 struct Animations {
     MovingPulse movingPulse;
     Pulse pulse;
     RedFlash redFlash;
     SolidColor solid;
+    WipeDown wipeDown;
 };
