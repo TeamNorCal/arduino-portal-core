@@ -170,7 +170,7 @@ void loop()
         // we have valid buffer of serial input
         char cmd = command[0];
         Ownership newOwner = owner;
-        uint8_t newSumLevel;
+        uint8_t newSumLevel = sumLevel;
         switch (cmd) {
             case '*':
                 Serial.println("Magnus Core Node");
@@ -191,6 +191,7 @@ void loop()
                     uint8_t rl = command[res] - '0';
                     newSumLevel += rl;
                 }
+                if (newSumLevel > 64) newSumLevel = 64;
                 char strength;
                 strength = command[PORTAL_STRENGTH_INDEX];
                 percent = decodePercent(strength);
